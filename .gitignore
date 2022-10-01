@@ -1,0 +1,4 @@
+/results
+*.png
+*.txt
+/__pycache__
