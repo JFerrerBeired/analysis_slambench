@@ -8,7 +8,54 @@ import matplotlib.pyplot as plt
 # End of BugFix
 
 import os
-from slamread import *      
+from slamread import *
+
+class GroupedFigure:
+    """
+    Class for managing group of pyplot figures and setting the same x/y ranges for all of them.
+    """
+    def __init__(self, group_x, group_y) -> None:
+        self.group_x = group_x
+        self.group_y = group_y
+        self.axes = []
+        self.ylims = []
+        self.xlims = []
+    
+    
+    def new_plot(self, function, *args, **kwargs):
+        """
+        Adds a new figure using the provided function and arguments to pass to it.
+        """
+        function(*args, **kwargs)
+        ax = plt.gca()
+        self.axes.append(ax)
+        self.ylims.append(ax.get_ylim())
+        self.xlims.append(ax.get_xlim())
+    
+    
+    def regroup_axes(self):
+        """
+        Call when all figures have been added to compute common min/max and apply it.
+        """
+        ylims = np.asarray(self.ylims)
+        xlims = np.asarray(self.xlims)
+        
+        if self.group_x:
+            min_x = np.min(xlims[:,0])
+            max_x = np.max(xlims[:,1])
+            
+            for ax in self.axes:
+                ax.set_xlim((min_x, max_x))
+
+        if self.group_y:
+            min_y = np.min(ylims[:,0])
+            max_y = np.max(ylims[:,1])
+            
+            for ax in self.axes:
+                ax.set_ylim((min_y, max_y))
+        
+        
+        
 
 
 def get_reformated_simple_name(data):
