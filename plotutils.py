@@ -18,6 +18,8 @@ class GroupedFigure:
         self.group_x = group_x
         self.group_y = group_y
         self.axes = []
+        self.figures = []
+        self.savedirs = []
         self.ylims = []
         self.xlims = []
     
@@ -26,7 +28,9 @@ class GroupedFigure:
         """
         Adds a new figure using the provided function and arguments to pass to it.
         """
-        function(*args, **kwargs)
+        savedir = function(*args, **kwargs, save=False) #Always set save to false so it don't get saved twice by mistake (the latter save from the class would overwrite anyway)
+        self.figures.append(plt.gcf())
+        self.savedirs.append(savedir)
         ax = plt.gca()
         self.axes.append(ax)
         self.ylims.append(ax.get_ylim())
@@ -53,9 +57,16 @@ class GroupedFigure:
             
             for ax in self.axes:
                 ax.set_ylim((min_y, max_y))
+    
+    
+    def save_figures(self):
+        """
+        Saves the figure to a file (directory given by the plotting functions)
+        """
         
-        
-        
+        for savedir, fig in zip(self.savedirs, self.figures):
+            fig.savefig(savedir)
+            plt.close(fig)
 
 
 def get_reformated_simple_name(data):
@@ -67,7 +78,7 @@ def get_reformated_simple_name(data):
         raise NotImplementedError("Reformat name when no name is provided.")
 
 
-def plot_fps(datas, savedir=None):
+def plot_fps(datas, savedir=None, save=False):
     fig, ax = plt.subplots(figsize=(12, 5))
     
     if not isinstance(datas, list):
@@ -95,11 +106,14 @@ def plot_fps(datas, savedir=None):
         file_str += ".png"
         file_str = os.path.join(savedir, file_str)
         
-        fig.savefig(file_str)
-        plt.close()
+        if save:
+            fig.savefig(file_str)
+            plt.close()
+        
+        return file_str
 
 
-def plot_individual_fps(data, savedir=None):
+def plot_individual_fps(data, savedir=None, save=False):
     fig, ax = plt.subplots(figsize=(12, 5))
     n_run=1
     for run in data["Runs"]:
@@ -122,13 +136,16 @@ def plot_individual_fps(data, savedir=None):
         file_str = "Individuals_" + get_reformated_simple_name(data) + ".png"
         file_str = os.path.join(savedir, file_str)
         
-        fig.savefig(file_str)
-        plt.close()
+        if save:
+            fig.savefig(file_str)
+            plt.close()
+        
+        return file_str
 
 
 #TODO: Fuse common features of these two functions
 
-def plot_function_time(data, id_callgraph, id_run, depth, serial = True, savedir=None):
+def plot_function_time(data, id_callgraph, id_run, depth, serial = True, savedir=None, save=False):
     """ Plot the time spent on each function for a given callgraph. """
     fig, ax = plt.subplots(figsize=(12, 5))
     
@@ -169,11 +186,14 @@ def plot_function_time(data, id_callgraph, id_run, depth, serial = True, savedir
                 ("stacked" if not serial else "indep") + ".png"
         file_str = os.path.join(savedir, file_str)
         
-        fig.savefig(file_str)
-        plt.close()
+        if save:
+            fig.savefig(file_str)
+            plt.close()
+        
+        return file_str
 
 
-def plot_function_time2(data, depth, min_frames = 0, serial = True, savedir=None):
+def plot_function_time2(data, depth, min_frames = 0, serial = True, savedir=None, save=False):
     """ Plot the time spent on each function for all the callgraphs that appear in at least min_frames. """
     fig, ax = plt.subplots(figsize=(12, 5))
     
@@ -226,11 +246,14 @@ def plot_function_time2(data, depth, min_frames = 0, serial = True, savedir=None
                 ("stacked" if not serial else "indep") + ".png"
         file_str = os.path.join(savedir, file_str)
         
-        fig.savefig(file_str)
-        plt.close()
+        if save:
+            fig.savefig(file_str)
+            plt.close()
+        
+        return file_str
 
 
-def plot_histogram_time(data, depth, min_frames = 0, threshold = 1, functions=None, savedir=None):
+def plot_histogram_time(data, depth, min_frames = 0, threshold = 1, functions=None, savedir=None, save=False):
     """ Plot the histogram of the time spent on each function for all the callgraphs that appear in at least min_frames. 
         If functions is given, depth is ignored and only those functions are plotted. 
         Ignores measures with a time under the threshold (only relevant functions). """
@@ -290,11 +313,14 @@ def plot_histogram_time(data, depth, min_frames = 0, threshold = 1, functions=No
         file_str += ".png"
         file_str = os.path.join(savedir, file_str)
         
-        fig.savefig(file_str)
-        plt.close()
+        if save:
+            fig.savefig(file_str)
+            plt.close()
+        
+        return file_str
 
 
-def plot_function_relative(data, id_callgraph, id_run, depth, percentile, relative=False, savedir=None):
+def plot_function_relative(data, id_callgraph, id_run, depth, percentile, relative=False, savedir=None, save=False):
     """ Plot the time spent on each function for a given callgraph. """
     def compute_mask(mask, name):
         print("\n" + "*"*20 + name + "*"*20)
@@ -382,11 +408,14 @@ def plot_function_relative(data, id_callgraph, id_run, depth, percentile, relati
                 ("relative" if relative else "absolute") + ".png"
         file_str = os.path.join(savedir, file_str)
         
-        fig.savefig(file_str)
-        plt.close()
+        if save:
+            fig.savefig(file_str)
+            plt.close()
+        
+        return file_str
 
 
-def plot_function_increase(data, id_callgraph, id_run, depth, percentile, relative=False, savedir=None):
+def plot_function_increase(data, id_callgraph, id_run, depth, percentile, relative=False, savedir=None, save=False):
     def compute_mask(mask):
         frame_time = base_times[mask]
         function_times = []
@@ -443,12 +472,11 @@ def plot_function_increase(data, id_callgraph, id_run, depth, percentile, relati
                 ("relative" if relative else "absolute") + ".png"
         file_str = os.path.join(savedir, file_str)
         
-        fig.savefig(file_str)
-        plt.close()
-
-
-
-
+        if save:
+            fig.savefig(file_str)
+            plt.close()
+    
+        return file_str
 
 
 if __name__ == "__main__":
