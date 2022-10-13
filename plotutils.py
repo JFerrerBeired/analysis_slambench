@@ -146,7 +146,7 @@ def plot_individual_fps(data, savedir=None, save=False):
 #TODO: Fuse common features of these two functions
 
 def plot_function_time(data, id_callgraph, id_run, depth, serial = True, savedir=None, save=False):
-    """ Plot the time spent on each function for a given callgraph. """
+    """ Plot the time spent per frame on each function for a given callgraph. """
     fig, ax = plt.subplots(figsize=(12, 5))
     
     times, callgraph = get_times_callgraph(data, id_callgraph, id_run)
@@ -194,7 +194,7 @@ def plot_function_time(data, id_callgraph, id_run, depth, serial = True, savedir
 
 
 def plot_function_time2(data, depth, min_frames = 0, serial = True, savedir=None, save=False):
-    """ Plot the time spent on each function for all the callgraphs that appear in at least min_frames. """
+    """ Plot the time spent on each function per frame for all the callgraphs that appear in at least min_frames. """
     fig, ax = plt.subplots(figsize=(12, 5))
     
     #Get all callgraphs
@@ -321,7 +321,7 @@ def plot_histogram_time(data, depth, min_frames = 0, threshold = 1, functions=No
 
 
 def plot_function_relative(data, id_callgraph, id_run, depth, percentile, relative=False, savedir=None, save=False):
-    """ Plot the time spent on each function for a given callgraph. """
+    """ Plot the time spent on each function for a given callgraph in stacked bars form. """
     def compute_mask(mask, name):
         print("\n" + "*"*20 + name + "*"*20)
         frame_time = base_times[mask]
@@ -416,12 +416,13 @@ def plot_function_relative(data, id_callgraph, id_run, depth, percentile, relati
 
 
 def plot_function_increase(data, id_callgraph, id_run, depth, percentile, relative=False, savedir=None, save=False):
+    """Plot increase in function time of the percentile samples against the median."""
     def compute_mask(mask):
         frame_time = base_times[mask]
         function_times = []
         time_in_functions = np.zeros_like(frame_time) #Time spent on the measured functions
     
-        for i, function in enumerate(functions):
+        for function in functions:
             function_time = times[function][mask]
             function_times.append(np.mean(function_time))
             time_in_functions += function_time
@@ -445,7 +446,6 @@ def plot_function_increase(data, id_callgraph, id_run, depth, percentile, relati
         times_function = np.concatenate(times[function])
         times[function] = times_function[~np.isnan(times_function)]
     
-
     median_indx = np.argsort(base_times)[len(base_times)//2]
     mask = np.zeros_like(base_times, dtype=bool)
     mask[median_indx] = True #Selects only the median element
@@ -479,23 +479,78 @@ def plot_function_increase(data, id_callgraph, id_run, depth, percentile, relati
         return file_str
 
 
+def plot_function_time_whiskers(datas, id_callgraphs, id_runs, depth, percentile, savedir=None, save=False):
+    """ Plot the time spent on each function for a given callgraph in whiskers form. 
+        Datas can be a list to plot several experiments together.""" 
+    if not isinstance(datas, list):
+        datas = [datas]
+        id_runs = [id_runs]
+        id_callgraphs = [id_callgraphs]
+    
+    #Check that the callgraphs are the same for all datas
+    #TODO: Update to check functions instead of callgraphs (this can match ergo good plot, even if the callgraphs are different as a whole)
+    try:
+        callgraph_compare = datas[0]['Runs'][id_runs[0]][callgraph_name_dict][id_callgraphs[0]]
+        for i, data in enumerate(datas[1:]):
+            if callgraph_compare != data['Runs'][id_runs[i+1]][callgraph_name_dict][id_callgraphs[i+1]]:
+                raise
+    except:
+        printerr("Callgraphs between datas do not match.")
+        return
+    
+    fig, ax = plt.subplots(figsize=(12, 5))
+    
+    for i, (data, id_callgraph, id_run) in enumerate(zip(datas, id_callgraphs, id_runs)):
+        times, callgraph = get_times_callgraph(data, id_callgraph, id_run)
+        functions = callgraph.get_functions(depth)
+        times_functions = []
+        
+        #Get total time spent on the roots of the callgraph for each run (Haven't checked if it works for more than one root)
+        base_times = np.concatenate(np.sum([times[root] for root in callgraph.get_roots()], axis=0))
+        base_times = base_times[~np.isnan(base_times)]
+        
+        #Flatten all runs (I don't care about individual runs)
+        for function in functions:
+            times_function = np.concatenate(times[function])
+            times_functions.append(times_function[~np.isnan(times_function)])
+
+        whiskers_positions = np.sort((100-percentile, percentile)) #Sorting so it is still min, max when percentile < 50
+        
+        box = ax.boxplot(times_functions, whis=whiskers_positions, patch_artist=True)
+        
+        for patch in box['boxes']:
+            patch.set_alpha(0.6)
+        ax.set_xticklabels(functions)
+        ax.set_ylabel("Time spent (%s)" % data["slamtimer_time_units"])
+        ax.set_title("Time spent with whiskers at percentiles %d, %d of callgraph %d (run %d) of %s at depth %d" % (whiskers_positions[0], whiskers_positions[1],
+                                                                                                                    id_callgraph, id_run, 
+                                                                                                                    data["Name"], 
+                                                                                                                    depth))
+    
+
+
 if __name__ == "__main__":
     #data_rgbd_multi = load_data_from_directory("C:/dev/analysis_slambench/results/rbgd_multi/living_room_traj0_loop", "Multi RGBD")
     #data_rgbd_single = load_data_from_directory("C:/dev/analysis_slambench/results/rbgd_single/living_room_traj0_loop", "Single RGBD")
     #data_mono_multi = load_data_from_directory("C:/dev/analysis_slambench/results/mono_multi/living_room_traj0_loop", "Multi Mono")
     #data_mono_single = load_data_from_directory("C:/dev/analysis_slambench/results/mono_single/living_room_traj0_loop", "Single Mono")
 
-    data = load_data_from_directory("C:\dev/analysis_slambench/test_timer/living_room_traj0_loop", "test_new_timer")
-    plot_fps(data, savedir="test_out")
-    plot_individual_fps(data, savedir="test_out")
+    data = load_data_from_directory("C:/dev/analysis_slambench/results/mono_multi/living_room_traj0_loop", "test")
+    
+    plot_function_time_whiskers(data, 2, 0, 3, 95)
+    plot_function_time_whiskers([data, data], [3,2], [0,0], 3, 95)
+    plt.show()
+    
+    """plot_fps(data, savedir="test_out")
+    plot_individual_fps(data, savedir="test_out")"""
 
     #print_callgraphs_info([data_rgbd_single], ["as"])
 
-    plot_function_time(data, 2, 0, 5, serial = False, savedir="test_out")
+    """plot_function_time(data, 2, 0, 5, serial = False, savedir="test_out")
     plot_function_time2(data, 4, min_frames=50, serial = True, savedir="test_out")
     plot_histogram_time(data, 4, 500, functions=["ORBextractor"], savedir="test_out")
     plot_histogram_time(data, 4, 500, savedir="test_out")
-    plt.show()
+    plt.show()"""
 
     """plot_fps([data_rgbd_multi, data_rgbd_single, data_mono_multi, data_mono_single], 
             ["rgbd_multi", "rgbd_single", "mono_multi", "mono_single"])"""
