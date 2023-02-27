@@ -513,6 +513,8 @@ def plot_function_time_whiskers(datas, id_callgraphs, id_runs, depth, percentile
         for function in functions:
             times_function = np.concatenate(times[function])
             times_functions.append(times_function[~np.isnan(times_function)])
+        times_functions.append(base_times - np.sum(times_functions, axis=0))
+        functions.append("Others")
 
         whiskers_positions = np.sort((100-percentile, percentile)) #Sorting so it is still min, max when percentile < 50
         
@@ -528,6 +530,80 @@ def plot_function_time_whiskers(datas, id_callgraphs, id_runs, depth, percentile
                                                                                                                     depth))
     
 
+def plot_fraction_frames_local_map_active(data, percentile_parameters, function_reference):
+    fig, ax = plt.subplots(figsize=(12, 5))
+    min_percentile, max_percentile, step_percentile = percentile_parameters
+    
+    percentiles = range(min_percentile, max_percentile, step_percentile)
+    fractions_mean = []
+    fractions_std = []
+
+    
+    for percentile in percentiles:
+        fraction_percentile = []
+        
+        for data_run in data["Runs"]:
+            a = get_frames_local_map_active(data_run, function_reference)
+            b = get_frames_peak_time(data_run, percentile)
+            
+            counter = 0
+            for peak_frame in b:
+                if peak_frame in a:
+                    counter += 1
+            
+            fraction_percentile.append(100*counter/len(b))
+            
+        fractions_mean.append(np.mean(fraction_percentile))
+        fractions_std.append(np.std(fraction_percentile))
+    
+    ax.errorbar(percentiles, fractions_mean, fractions_std, capsize=2)
+    ax.set_ylabel("Fraction of frames with local map active (%)")
+    ax.set_xlabel("Percentile of time spent per frame")
+    ax.set_title("Frequency of parallel local mapping")
+
+
+def plot_extra_time_percentile(data, percentiles):
+    fig, ax = plt.subplots(figsize=(12, 5))
+
+    mean_times_normal = []
+    mean_times_peak = []
+    std_times_normal = []
+    std_times_peak = []
+    
+    for percentile in percentiles:
+        times_peak_run = []
+        times_normal_run = []
+        for data_run in data["Runs"]:
+            b = get_frames_peak_time(data_run, percentile)
+            
+            time_peak = 0
+            time_normal = 0
+            
+            for frame, time in zip(data_run[slambench_name_dict]['Frame Number'], data_run[slambench_name_dict]['Duration_Frame']):
+                if frame in b:
+                    time_peak += time
+                else:
+                    time_normal += time
+            
+            times_peak_run.append(time_peak)
+            times_normal_run.append(time_normal)
+    
+        mean_times_normal.append(np.mean(times_normal_run))
+        std_times_normal.append(np.std(times_normal_run))
+        mean_times_peak.append(np.mean(times_peak_run))
+        std_times_peak.append(np.std(times_peak_run))
+
+    percentiles_str = [str(x) for x in percentiles]
+        
+    ax.barh(percentiles_str, mean_times_normal, xerr=std_times_normal, capsize=2)
+    ax.barh(percentiles_str, mean_times_peak, left=mean_times_normal, xerr=std_times_peak, capsize=2)
+        
+    ax.set_ylabel("Peak percentile threshold")
+    ax.set_xlabel("Total Execution Time (s)")
+    ax.set_title("Weight of peak time frames")
+    
+    fig.legend(["Time normal", "Time peak"])
+
 
 if __name__ == "__main__":
     #data_rgbd_multi = load_data_from_directory("C:/dev/analysis_slambench/results/rbgd_multi/living_room_traj0_loop", "Multi RGBD")
@@ -535,10 +611,16 @@ if __name__ == "__main__":
     #data_mono_multi = load_data_from_directory("C:/dev/analysis_slambench/results/mono_multi/living_room_traj0_loop", "Multi Mono")
     #data_mono_single = load_data_from_directory("C:/dev/analysis_slambench/results/mono_single/living_room_traj0_loop", "Single Mono")
 
-    data = load_data_from_directory("C:/dev/analysis_slambench/results/mono_multi/living_room_traj0_loop", "test")
+    """data = load_data_from_directory("C:/dev/analysis_slambench/results/mono_multi/living_room_traj0_loop", "test")
     
     plot_function_time_whiskers(data, 2, 0, 3, 95)
     plot_function_time_whiskers([data, data], [3,2], [0,0], 3, 95)
+    plt.show()"""
+    
+   
+    data_local_map_idle = load_data_from_directory("C:/dev/analysis_slambench/results/test_local_map_idle")  
+    plot_histogram_time(data_local_map_idle, 0)
+    plot_fraction_frames_local_map_active(data_local_map_idle, (5, 99, 1), "TrackRGBD")
     plt.show()
     
     """plot_fps(data, savedir="test_out")

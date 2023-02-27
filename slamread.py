@@ -11,8 +11,7 @@ from callgraph import *
 slambench_name_dict = "slambench"
 slamtimer_name_dict = "slamtimer"
 callgraph_name_dict = "callgraphs"
-
-expected_callgraph = CallGraph()
+local_map_name_dict = "local_map_idle"
 
 rolling_widths = [5, 10]
 rolling_metrics = ["Duration_Frame", ]
@@ -87,7 +86,7 @@ def load_data_from_file(filename, showtime=True):
         lines = f.read().splitlines()
         f.close()
     
-    data = {"filename":filename, slambench_name_dict:{}, slamtimer_name_dict:[{}], callgraph_name_dict:[]}
+    data = {"filename":filename, slambench_name_dict:{}, slamtimer_name_dict:[{}], callgraph_name_dict:[], local_map_name_dict:[{}]}
 
     frame = 1
     headers = None
@@ -117,6 +116,7 @@ def load_data_from_file(filename, showtime=True):
                         data[slambench_name_dict][header] += [current_value]
                         
                     data[slamtimer_name_dict] += [{}]
+                    data[local_map_name_dict] += [{}]
                     
                     callgraph_found = False
                     for reference_callgraph, frames in data[callgraph_name_dict]:
@@ -146,9 +146,11 @@ def load_data_from_file(filename, showtime=True):
                     
                     if not function_name in data[slamtimer_name_dict][-1].keys():
                         data[slamtimer_name_dict][-1][function_name] = [function_time]
+                        data[local_map_name_dict][-1][function_name] = [info[2]]
                     else:
-                        data[slamtimer_name_dict][-1][function_name] += [function_time]
-                    
+                        data[slamtimer_name_dict][-1][function_name].append(function_time)
+                        data[local_map_name_dict][-1][function_name].append(info[2])
+                                        
                     #CALLGRAPH BUILDING
                     callgraph_dict[depth].append(function_name)
                     if last_depth > depth: #This is a parent
@@ -175,6 +177,7 @@ def load_data_from_file(filename, showtime=True):
     
     #Remove last (empty) element of slamtimer
     data[slamtimer_name_dict].pop()
+    data[local_map_name_dict].pop()
     
     #Convert lists to numpy arrays
     for key, value in data[slambench_name_dict].items():
@@ -364,32 +367,46 @@ def get_times_callgraph(data, id_callgraph=None, id_run=None, callgraph=None):
     return res, callgraph_compare        
 
 
-
-expected_callgraph.add_functions((("UndistortKeyPoints", "process"), ("AssignFeaturesToGrid", "process"), ("Track", "process")))
+def get_frames_local_map_active(data, function_reference):
+    """ Return a list with the frames that the local_map was active on the when the function provided started. """
+    frames_active = []
     
+    for frame, local_map_idle in zip(data[slambench_name_dict]["Frame Number"], data[local_map_name_dict]):
+        #TODO: Change the reading so it reads booleans instead of strings
+        if '0' in local_map_idle[function_reference]: #There is some instance of the function that was not idle
+            frames_active.append(int(frame))
+    
+    return frames_active
 
-"""data = load_data_from_file("results\orbslam2_rgbd_dataset_freiburg1_xyz.log")
-functions = get_slamtimer_functions(data)
-times = get_total_time_spent(data, functions)
-print(times)"""
 
-#data = load_data_from_directory("C:/dev/analysis_slambench/results/test_run/rbgd_multi/living_room_traj0_loop")
+def get_frames_peak_time(data, percentile):
+    """ Return a list with the frames where the root time was over the percentile given. """
+    #TODO: Very similar (again to the percentiles of plotutils.py) -> REFACTOR Candidate. Although this ises slambench instead of callgraphs
+    
+    base_times = data[slambench_name_dict]["Duration_Frame"]
+    mask = base_times > np.percentile(base_times, percentile)
+    
+    return np.array(data[slambench_name_dict]["Frame Number"][mask], dtype=int)
 
-#print_callgraphs(data['Runs'][0][callgraph_name_dict])
 
-#data2 = load_data_from_directory("C:/dev/analysis_slambench/results/test_run/mono_multi/living_room_traj0_loop")
-#print_callgraphs(data2['Runs'][0][callgraph_name_dict])
 
 if __name__ == "__main__":
-    data_rgbd_multi = load_data_from_directory("C:/dev/analysis_slambench/results/rbgd_multi/living_room_traj0_loop")
+    """data_rgbd_multi = load_data_from_directory("C:/dev/analysis_slambench/results/rbgd_multi/living_room_traj0_loop")
     data_rgbd_single = load_data_from_directory("C:/dev/analysis_slambench/results/rbgd_single/living_room_traj0_loop")
     data_mono_multi = load_data_from_directory("C:/dev/analysis_slambench/results/mono_multi/living_room_traj0_loop")
-    data_mono_single = load_data_from_directory("C:/dev/analysis_slambench/results/mono_single/living_room_traj0_loop")
+    data_mono_single = load_data_from_directory("C:/dev/analysis_slambench/results/mono_single/living_room_traj0_loop")"""
+    data_local_map_idle = load_data_from_directory("C:/dev/analysis_slambench/results/test_local_map_idle")
     
-    print_callgraphs_info([data_rgbd_multi, data_rgbd_single, data_mono_multi, data_mono_single])
+    print_callgraphs_info(data_local_map_idle)
+    a = get_frames_local_map_active(data_local_map_idle["Runs"][0], "TrackRGBD")
+    b = get_frames_peak_time(data_local_map_idle["Runs"][0], 95)
     
-    print_callgraphs_info(data_rgbd_multi, "test_out/a.txt")
+    counter = 0
+    for peak_frame in b:
+        if peak_frame in a:
+            counter += 1
     
-    get_times_callgraph(data_mono_single, 0, 0)
+    print("Local Mapping was active in %d of %d peak frames.\nFrames with Local Mapping active: %d" % (counter, len(b), len(a)))
+
 
 3;
