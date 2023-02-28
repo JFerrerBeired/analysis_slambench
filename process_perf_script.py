@@ -238,7 +238,7 @@ def process_slambench_output_file(lines):
         if fields[0] in ['FRAME', 'END']: #TODO: Remove end (useless)
             times.append(int(fields[1]) - t0)
         elif fields[0] == 'REAL_END':
-            times.append(int(fields[1]) - t0)
+            times.append(int(fields[1])*100 - t0) #Ridiculous time so all events aside the last frame, fit here
             return np.array(times)
         
         i += 1    
@@ -318,61 +318,60 @@ def count_events(data, event_name):
     
     return n_events
 
-  
-    
-    
-times = process_slambench_output_file(read_file("/home/jorge/profile/dev_python_slambench/output_large"))
 
-lines = read_file("/home/jorge/profile/dev_python_slambench/slambench_script_large")
-"""function_counts, function_libraries = process_file(lines)
+if __name__ == "__main__":    
+    times = process_slambench_output_file(read_file("/home/jorge/profile/dev_python_slambench/output_large"))
 
-print("\n" + "="*50 + "\n\nFUNCTIONS WITH SEVERAL LIBRARIES: ")
-for function_name, ddic in function_libraries.items():
-    if len(ddic) > 1:
-        print("\t", function_name, "\t", ddic.values())
+    lines = read_file("/home/jorge/profile/dev_python_slambench/slambench_script_large")
+    """function_counts, function_libraries = process_file(lines)
 
-
-counts = get_counts_by_event_and_sort_key(function_counts, "cycles", "child")
-n_events = count_events(function_counts, "cycles")
-
-print(n_events)
-for i in range(10):
-    print(counts[0][i])"""
+    print("\n" + "="*50 + "\n\nFUNCTIONS WITH SEVERAL LIBRARIES: ")
+    for function_name, ddic in function_libraries.items():
+        if len(ddic) > 1:
+            print("\t", function_name, "\t", ddic.values())
 
 
-print("\n\n" + "="*50 + "\n")
+    counts = get_counts_by_event_and_sort_key(function_counts, "cycles", "child")
+    n_events = count_events(function_counts, "cycles")
 
-function_counts, function_libraries, pid_counts, tid_counts, frame_counts = \
-    process_script_file(lines, times)
-                 #filter_library_exclude='[kernel.kallsyms]', 
-                 #filter_parent_include='main')#,
-                 #filter_thread_include='main')
-
-counts = get_counts_by_event_and_sort_key(function_counts, "cycles", "child")
-n_events = count_events(function_counts, "cycles")
+    print(n_events)
+    for i in range(10):
+        print(counts[0][i])"""
 
 
-"""print(n_events)
+    print("\n\n" + "="*50 + "\n")
 
-for i,n in enumerate(_[-1]):
-    print(i, n)
-    
-for i in range(10):
-    print(counts[0][i])
-"""
+    function_counts, function_libraries, pid_counts, tid_counts, frame_counts = \
+        process_script_file(lines, times)
+                    #filter_library_exclude='[kernel.kallsyms]', 
+                    #filter_parent_include='main')#,
+                    #filter_thread_include='main')
 
-
-tids = sorted(list(tid_counts['cycles'].keys()))
-
-for i, dat in enumerate(frame_counts['cycles']['tid']):
-    print(i, end='\t')
-    for tid in tids:
-        print(dat[tid], end='\t')
-    print("\n")
+    counts = get_counts_by_event_and_sort_key(function_counts, "cycles", "child")
+    n_events = count_events(function_counts, "cycles")
 
 
+    """print(n_events)
 
-3
+    for i,n in enumerate(_[-1]):
+        print(i, n)
+        
+    for i in range(10):
+        print(counts[0][i])
+    """
+
+
+    tids = sorted(list(tid_counts['cycles'].keys()))
+
+    for i, dat in enumerate(frame_counts['cycles']['tid']):
+        print(i, end='\t')
+        for tid in tids:
+            print(dat[tid], end='\t')
+        print("\n")
+
+
+
+    3
 
 """import time
 timeA = []

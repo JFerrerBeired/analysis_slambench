@@ -162,7 +162,9 @@ def load_data_from_file(filename, showtime=True):
                     
                     callgraph.add_function(function_name)
                 elif "created with" == line[8:20] or line == "End of program.":
-                    pass                 
+                    pass
+                elif any(w in line for w in ["START", "FRAME", "END", "REAL_END"]): #Identifiers for tracking frames for perf_script analysis
+                    pass
                 else:
                     printwarning("%s: Stat line %d not expected: %s\n" % (filename, i, line))
             else: #Define headers and create arrays
