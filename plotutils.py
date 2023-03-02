@@ -605,6 +605,33 @@ def plot_extra_time_percentile(data, percentiles):
     fig.legend(["Time normal", "Time peak"])
 
 
+def plot_thread_activity(data, tids, event='cycles'):
+    """Plots thread activity in a grid visualization. Extracts the data from frame_counts
+    of perf_script processed data."""
+    fig, ax = plt.subplots(figsize=(12, 5))
+    
+    grid = np.zeros((len(tids), len(data[event]['tid'])))
+    
+    for i, frame in enumerate(data['cycles']['tid']):
+        for j, tid in enumerate(tids):
+            grid[j][i] = frame[tid]
+
+            
+    ax.imshow(np.log(grid[:,:-2]), aspect='auto', cmap='Reds')
+    ax.yaxis.set_ticks(np.arange(1, len(tids))-0.5)
+    ax.set_yticklabels([])
+    ax.set_yticks(np.arange(len(tids)), minor=True)
+    ax.set_yticklabels(tids, minor=True)
+    ax.tick_params(axis='y', which="both",length=0)
+    ax.set_ylabel("Thread ID")
+    #ax.set_xlabel("Frame")
+    ax.set_xlabel("Time (100ms blocks)")
+    
+    ax.grid(which='major', color='black', linestyle='-', linewidth=1, axis='y')
+    
+    
+
+
 if __name__ == "__main__":
     #data_rgbd_multi = load_data_from_directory("C:/dev/analysis_slambench/results/rbgd_multi/living_room_traj0_loop", "Multi RGBD")
     #data_rgbd_single = load_data_from_directory("C:/dev/analysis_slambench/results/rbgd_single/living_room_traj0_loop", "Single RGBD")

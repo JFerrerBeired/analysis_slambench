@@ -85,7 +85,8 @@ def time_by_function(data_slambench, data_perf_script, function_names_slamtimer,
     for function_name_slamtimer, function_name_perf_script in zip(function_names_slamtimer, function_names_perf_script):
         time_slamtimer = 0
         for frame in data_slamtimer:
-            time_slamtimer += np.sum(frame[function_name_slamtimer])
+            if function_name_slamtimer in frame:
+                time_slamtimer += np.sum(frame[function_name_slamtimer])
         
         times_slamtimer.append(time_slamtimer/total_time_slamtimer)        
         times_perf_script.append(data_perf_script["cycles"][function_name_perf_script]["total"]/n_events_perf_script)
@@ -100,4 +101,5 @@ def time_by_function(data_slambench, data_perf_script, function_names_slamtimer,
     plt.xticks(x_axis_ticks, x_axis_labels)
     plt.xlabel("Functions")
     plt.ylabel("Relative frequency")
+    plt.xticks(rotation=30, horizontalalignment='right')
     plt.legend()
