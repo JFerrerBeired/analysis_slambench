@@ -2,6 +2,8 @@ import numpy as np
 from collections import defaultdict
 import re
 import time
+from multiprocessing import Process, Manager, cpu_count
+import json
 
 FIELD_PID = 1
 FIELD_TIME = 2
@@ -19,7 +21,7 @@ def read_file(file_dir):
     return lines
 
 
-def process_script_file(lines, frame_times=None, **kwargs):
+def process_script_file(lines, frame_times, data_return=None, **kwargs):
     """
         Procesa las líneas del fichero leídas por read_file.
         Los filtros se pasan como argumentos y son leídos por kwargs.
@@ -27,6 +29,9 @@ def process_script_file(lines, frame_times=None, **kwargs):
         Si se da un filtro include, se ignora el exclude.
         
         El filtro de threads acepta "main" para los que pid y tid coincidan.
+        
+        Si se pasa un diccionario por data_return, se devuelve
+        por referencia en lugar de por el return.
     """
     t0 = time.time()
     
@@ -137,8 +142,7 @@ def process_script_file(lines, frame_times=None, **kwargs):
     function_libraries = defaultdict(lambda: defaultdict(lambda: 0))
     pid_counts = defaultdict(lambda: defaultdict(lambda: 0))
     tid_counts = defaultdict(lambda: defaultdict(lambda: 0))
-    if frame_times is not None:
-        frame_counts = defaultdict(lambda: defaultdict(lambda: [defaultdict(lambda: 0) for _ in range(len(frame_times))]))
+    frame_counts = defaultdict(lambda: defaultdict(lambda: [defaultdict(lambda: 0) for _ in range(len(frame_times))]))
     
     # Process the lines
     first_timestamp = timestamp
@@ -151,11 +155,10 @@ def process_script_file(lines, frame_times=None, **kwargs):
             continue
         
         # Process frame counting
-        if frame_times is not None:
-            relative_timestamp = timestamp - first_timestamp
-            
-            while (relative_timestamp > frame_times[frame] - frame_times[0]): #next frame
-                frame += 1
+        relative_timestamp = timestamp - first_timestamp
+        
+        while (relative_timestamp > frame_times[frame] - frame_times[0]): #next frame
+            frame += 1
 
         # Process the call-stack lines
         i += 1
@@ -212,11 +215,11 @@ def process_script_file(lines, frame_times=None, **kwargs):
                 function_counts[event_name][function_name]["self"] += 1
                 pid_counts[event_name][pid] += 1
                 tid_counts[event_name][tid] += 1
-                if frame_times is not None:
-                    #Frame-1 because starts in frame=1 (interval 0-1)
-                    frame_counts[event_name]["function_name"][frame-1][function_name] += 1
-                    frame_counts[event_name]["tid"][frame-1][tid] += 1
-                    frame_counts[event_name]["total"][frame-1]["foo"] += 1 
+
+                #Frame-1 because starts in frame=1 (interval 0-1)
+                frame_counts[event_name]["function_name"][frame-1][function_name] += 1
+                frame_counts[event_name]["tid"][frame-1][tid] += 1
+                frame_counts[event_name]["total"][frame-1]["foo"] += 1 #TODO: Fix this foo
             else:
                 function_counts[event_name][function_name]["child"] += 1
             function_counts[event_name][function_name]["total"] += 1
@@ -224,10 +227,92 @@ def process_script_file(lines, frame_times=None, **kwargs):
             i += 1
             caller = False
     
+    
+    
+    return_dict = {"function_counts":function_counts, "function_libraries":function_libraries,
+                   "pid_counts":pid_counts, "tid_counts":tid_counts, "frame_counts":frame_counts}
+    
+    if data_return is not None:
+        return_dict = json.loads(json.dumps(return_dict)) #Seems to be around 10ms. Is it worth it to change the default dicts so they can be serialized by pickle?
+        data_return.update(return_dict)
+        return
+    
     t = time.time()
     print(f"TIME TO PROCESS FILE: {(t-t0):.3f} s")
-    return function_counts, function_libraries, pid_counts, tid_counts, frame_counts
+    return return_dict
+    #return function_counts, function_libraries, pid_counts, tid_counts, frame_counts
 
+
+def process_script_file_paralell(lines, frame_times, n_threads = None, **kwargs):
+    t0 = time.time()
+    if not isinstance(n_threads, int):
+        n_threads = cpu_count()
+    
+    chunks = np.linspace(0, len(lines), n_threads+1, dtype=int)
+    
+    threads = []
+    return_dicts = []
+    
+    #Align equal-size chunks so all of them start in the next event
+    for c in range(1, n_threads+1):
+        i = chunks[c]
+        while i < len(lines) and lines[i].startswith(("\t", "\n")):
+            i += 1
+        chunks[c] = i
+    
+    manager = Manager()
+    for n in range(n_threads):
+        curr_dict = manager.dict()
+        return_dicts.append(curr_dict)
+        threads.append(Process(target=process_script_file, 
+                               args=(lines[chunks[n]:chunks[n+1]], frame_times, curr_dict), kwargs=kwargs))
+        threads[n].start()
+    
+    [thread.join() for thread in threads]
+    
+    tx = time.time()
+    function_counts = defaultdict(lambda: defaultdict(lambda: defaultdict(lambda: 0)))
+    function_libraries = defaultdict(lambda: defaultdict(lambda: 0))
+    pid_counts = defaultdict(lambda: defaultdict(lambda: 0))
+    tid_counts = defaultdict(lambda: defaultdict(lambda: 0))
+    frame_counts = defaultdict(lambda: defaultdict(lambda: [defaultdict(lambda: 0) for _ in range(len(frame_times))]))
+
+    for rd in return_dicts:
+        for dict_name, d in rd.items():
+            curr_dict = None
+            match dict_name:
+                case 'function_counts':
+                    curr_dict = function_counts
+                case 'function_libraries':
+                    curr_dict = function_libraries
+                case 'pid_counts':
+                    curr_dict = pid_counts
+                case 'tid_counts':
+                    curr_dict = tid_counts
+                case 'frame_counts':
+                    curr_dict = None
+                    continue #TODO: Fuse this dict
+                case _:
+                    raise(NotImplementedError)
+            
+            #Recursively traverse the dictionary and add the last-depth element to the global one
+            stack = [(list(d.items()), curr_dict)] # create a list of key-value pairs and a its destination dictionary
+            while stack: # while the stack is not empty
+                kv_pairs, dest_dict = stack.pop() # pop the last pair of key-value pairs and parent dictionary
+                for key, value in kv_pairs: # iterate over them
+                    if isinstance(value, dict): # if the value is a dictionary
+                        stack.append((list(value.items()), dest_dict[key])) # push its key-value pairs and the updated list of keys to the stack
+                    else: # otherwise
+                        dest_dict[key] += value
+
+
+    t = time.time()
+    print(f"TIME TO PROCESS FILE: {(t-t0):.3f} s")
+    print(f"SUBTIME: {(t-tx):.3f} s")
+    
+    return function_counts, function_libraries, pid_counts, tid_counts, frame_counts
+    
+    
 
 def process_slambench_output_file(lines):
     t0 = int(lines[0].split('\t')[1])
@@ -319,80 +404,39 @@ def count_events(data, event_name):
     return n_events
 
 
-if __name__ == "__main__":    
-    times = process_slambench_output_file(read_file("/home/jorge/profile/dev_python_slambench/output_large"))
+if __name__ == "__main__":
+    slambench_file = r"C:\dev\analysis_slambench\results\perf_scripts\sanity\output.log"
+    perf_script_file = r"C:\dev\analysis_slambench\results\perf_scripts\sanity\slambench_script"
 
-    lines = read_file("/home/jorge/profile/dev_python_slambench/slambench_script_large")
-    """function_counts, function_libraries = process_file(lines)
+    times = process_slambench_output_file(read_file(slambench_file))
+    lines = read_file(perf_script_file)
+    
+    measures = []
+    sub_measures = []
+    for k in range(5):
+        t0 = time.perf_counter()
+        function_counts, function_libraries, pid_counts, tid_counts, frame_counts = \
+            process_script_file(lines, times)
+        sub_measures.append(time.perf_counter()-t0)
+    measures.append(sub_measures)
+    
+    for n in range(2, 13):
+        sub_measures = []
+        for k in range(5):
+            t0 = time.perf_counter()
+            function_counts, function_libraries, pid_counts, tid_counts, frame_counts = \
+                process_script_file_paralell(lines, times, n)
+            sub_measures.append(time.perf_counter()-t0)
+        measures.append(sub_measures)
+    
+    
+    for i, sm in enumerate(measures):
+        print(f"{i+1}: {np.mean(sm):.3f} ± {np.std(sm):.3f} s")
 
-    print("\n" + "="*50 + "\n\nFUNCTIONS WITH SEVERAL LIBRARIES: ")
-    for function_name, ddic in function_libraries.items():
-        if len(ddic) > 1:
-            print("\t", function_name, "\t", ddic.values())
 
-
-    counts = get_counts_by_event_and_sort_key(function_counts, "cycles", "child")
-    n_events = count_events(function_counts, "cycles")
-
-    print(n_events)
-    for i in range(10):
-        print(counts[0][i])"""
-
-
-    print("\n\n" + "="*50 + "\n")
-
-    function_counts, function_libraries, pid_counts, tid_counts, frame_counts = \
+    """function_counts, function_libraries, pid_counts, tid_counts, frame_counts = \
         process_script_file(lines, times)
                     #filter_library_exclude='[kernel.kallsyms]', 
                     #filter_parent_include='main')#,
-                    #filter_thread_include='main')
+                    #filter_thread_include='main')"""
 
-    counts = get_counts_by_event_and_sort_key(function_counts, "cycles", "child")
-    n_events = count_events(function_counts, "cycles")
-
-
-    """print(n_events)
-
-    for i,n in enumerate(_[-1]):
-        print(i, n)
-        
-    for i in range(10):
-        print(counts[0][i])
-    """
-
-
-    tids = sorted(list(tid_counts['cycles'].keys()))
-
-    for i, dat in enumerate(frame_counts['cycles']['tid']):
-        print(i, end='\t')
-        for tid in tids:
-            print(dat[tid], end='\t')
-        print("\n")
-
-
-
-    3
-
-"""import time
-timeA = []
-timeB = []
-timeC = []
-for k in range(100):
-    start = time.time()
-    a = get_counts_by_event_and_sort_keyA(function_counts, "cycles", "self")
-    stop = time.time()
-    timeA.append(stop-start)
-
-    start = time.time()
-    b = get_counts_by_event_and_sort_keyB(function_counts, "cycles", "self")
-    stop = time.time()
-    timeB.append(stop-start)
-    
-    start = time.time()
-    c = get_counts_by_event_and_sort_keyC(function_counts, "cycles", "self")
-    stop = time.time()
-    timeC.append(stop-start)
-
-print("Average time taken by for timeA: " + str(sum(timeA)/100))
-print("Average time taken by for timeB: " + str(sum(timeB)/100))
-print("Average time taken by for timeC: " + str(sum(timeC)/100))"""
